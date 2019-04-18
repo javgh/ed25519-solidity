@@ -1,6 +1,7 @@
 pragma solidity ^0.5.3;
 
-// Based on https://ed25519.cr.yp.to/python/ed25519.py
+// Using formulas from https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html
+// and constants from https://tools.ietf.org/html/draft-josefsson-eddsa-ed25519-03
 
 contract Ed25519 {
     uint constant q = 2 ** 255 - 19;
@@ -9,55 +10,97 @@ contract Ed25519 {
     uint constant Bx = 15112221349535400772501151409588531511454012693041857206046113283949847762202;
     uint constant By = 46316835694926478169428394003475163141307993866256225615783033603165251855960;
 
-    function inv(uint _x) internal returns (uint o) {
-        // use bigModExp precompile
-        assembly {
-            let p := mload(0x40)
-            mstore(p, 0x20)
-            mstore(add(p, 0x20), 0x20)
-            mstore(add(p, 0x40), 0x20)
-            mstore(add(p, 0x60), _x)
-            mstore(add(p, 0x80), 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeb) // q - 2
-            mstore(add(p, 0xa0), 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed) // q
-            if iszero(call(not(0), 0x05, 0, p, 0xc0, o, 0x20)) {
-                revert(0, 0)
-            }
+    struct Point {
+        uint x;
+        uint y;
+        uint z;
+    }
+
+    struct Scratchpad {
+        uint a;
+        uint b;
+        uint c;
+        uint d;
+        uint e;
+        uint f;
+        uint g;
+        uint h;
+    }
+
+    function inv(uint a) internal pure returns (uint invA) {
+        uint b = a;
+        uint e = q - 2;
+        invA = 1;
+
+        while (e > 0) {
+            if (e & 1 == 1) { invA = mulmod(invA, b, q); }
+            e = e >> 1;
+            b = mulmod(b, b, q);
         }
     }
 
-    function edwards(uint _Px, uint _Py,
-                     uint _Qx, uint _Qy) internal returns (uint, uint) {
-        uint x = mulmod(addmod(mulmod(_Px, _Qy, q), mulmod(_Qx, _Py, q), q),
-                        inv(addmod(1, mulmod(d, mulmod(
-                            mulmod(_Px, _Qx, q), mulmod(_Py, _Qy, q), q), q), q)), q);
-        uint y = mulmod(addmod(mulmod(_Py, _Qy, q), mulmod(_Px, _Qx, q), q),
-                        inv(addmod(1, q - mulmod(d, mulmod(
-                            mulmod(_Px, _Qx, q), mulmod(_Py, _Qy, q), q), q), q)), q);
-        return (x, y);
+    function ecAdd(Point memory p1,
+                   Point memory p2) internal pure returns (Point memory p3) {
+        Scratchpad memory tmp;
+
+        tmp.a = mulmod(p1.z, p2.z, q);
+        tmp.b = mulmod(tmp.a, tmp.a, q);
+        tmp.c = mulmod(p1.x, p2.x, q);
+        tmp.d = mulmod(p1.y, p2.y, q);
+        tmp.e = mulmod(d, mulmod(tmp.c, tmp.d, q), q);
+        tmp.f = addmod(tmp.b, q - tmp.e, q);
+        tmp.g = addmod(tmp.b, tmp.e, q);
+        p3.x = mulmod(mulmod(tmp.a, tmp.f, q),
+                      addmod(addmod(mulmod(addmod(p1.x, p1.y, q),
+                                           addmod(p2.x, p2.y, q), q),
+                                    q - tmp.c, q), q - tmp.d, q), q);
+        p3.y = mulmod(mulmod(tmp.a, tmp.g, q),
+                      addmod(tmp.d, tmp.c, q), q);
+        p3.z = mulmod(tmp.f, tmp.g, q);
     }
 
-    function scalarmult(uint _e) internal returns (uint, uint) {
-        uint Px = Bx;
-        uint Py = By;
-        uint x = 0;
-        uint y = 1;
-        while (_e > 0) {
-            if (_e & 1 == 1) { (x, y) = edwards(x, y, Px, Py); }
-            _e = _e >> 1;
-            (Px, Py) = edwards(Px, Py, Px, Py);
+    function ecDouble(Point memory p1) internal pure returns (Point memory p2) {
+        Scratchpad memory tmp;
+
+        tmp.a = addmod(p1.x, p1.y, q);
+        tmp.b = mulmod(tmp.a, tmp.a, q);
+        tmp.c = mulmod(p1.x, p1.x, q);
+        tmp.d = mulmod(p1.y, p1.y, q);
+        tmp.e = q - tmp.c;
+        tmp.f = addmod(tmp.e, tmp.d, q);
+        tmp.h = mulmod(p1.z, p1.z, q);
+        tmp.g = addmod(tmp.f, q - mulmod(2, tmp.h, q), q);
+        p2.x = mulmod(addmod(addmod(tmp.b, q - tmp.c, q), q - tmp.d, q),
+                      tmp.g, q);
+        p2.y = mulmod(tmp.f, addmod(tmp.e, q - tmp.d, q), q);
+        p2.z = mulmod(tmp.f, tmp.g, q);
+    }
+
+    function scalarmult(uint s) public pure returns (uint, uint) {
+        Point memory b;
+        Point memory result;
+        b.x = Bx;
+        b.y = By;
+        b.z = 1;
+        result.x = 0;
+        result.y = 1;
+        result.z = 1;
+
+        while (s > 0) {
+            if (s & 1 == 1) { result = ecAdd(result, b); }
+            s = s >> 1;
+            b = ecDouble(b);
         }
-        return (x, y);
+
+        uint invZ = inv(result.z);
+        result.x = mulmod(result.x, invZ, q);
+        result.y = mulmod(result.y, invZ, q);
+
+        return (result.x, result.y);
     }
 
-    function debug(uint _s) public returns (uint) {
-        (, uint y) = scalarmult(_s);
+    function gasEstimation() public pure returns (uint) {
+        (, uint y) = scalarmult(2 ** 255 - 1);
         return y;
-        //return mulmod(_s, inv(_s), q);
-    }
-
-    function gasEstimation() public returns (uint) {
-        (, uint y) = scalarmult(2 ** 80 - 1);
-        return y;
-        //return expmod(2, (q - 1) / 4, q);
     }
 }
