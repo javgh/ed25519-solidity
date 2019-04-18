@@ -27,15 +27,23 @@ contract Ed25519 {
         uint h;
     }
 
-    function inv(uint a) internal pure returns (uint invA) {
-        uint b = a;
+    function inv(uint a) internal view returns (uint invA) {
         uint e = q - 2;
-        invA = 1;
+        uint m = q;
 
-        while (e > 0) {
-            if (e & 1 == 1) { invA = mulmod(invA, b, q); }
-            e = e >> 1;
-            b = mulmod(b, b, q);
+        // use bigModExp precompile
+        assembly {
+            let p := mload(0x40)
+            mstore(p, 0x20)
+            mstore(add(p, 0x20), 0x20)
+            mstore(add(p, 0x40), 0x20)
+            mstore(add(p, 0x60), a)
+            mstore(add(p, 0x80), e)
+            mstore(add(p, 0xa0), m)
+            if iszero(staticcall(not(0), 0x05, p, 0xc0, p, 0x20)) {
+                revert(0, 0)
+            }
+            invA := mload(p)
         }
     }
 
@@ -76,7 +84,7 @@ contract Ed25519 {
         p2.z = mulmod(tmp.f, tmp.g, q);
     }
 
-    function scalarmult(uint s) public pure returns (uint, uint) {
+    function scalarmult(uint s) public view returns (uint, uint) {
         Point memory b;
         Point memory result;
         b.x = Bx;
@@ -99,7 +107,7 @@ contract Ed25519 {
         return (result.x, result.y);
     }
 
-    function gasEstimation() public pure returns (uint) {
+    function gasEstimation() public view returns (uint) {
         (, uint y) = scalarmult(2 ** 255 - 1);
         return y;
     }
