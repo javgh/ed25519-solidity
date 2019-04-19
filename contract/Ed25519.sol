@@ -106,9 +106,4 @@ contract Ed25519 {
 
         return (result.x, result.y);
     }
-
-    function gasEstimation() public view returns (uint) {
-        (, uint y) = scalarmult(2 ** 255 - 1);
-        return y;
-    }
 }
