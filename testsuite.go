@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/hex"
 	"flag"
@@ -22,8 +21,8 @@ import (
 	solidityEd25519 "./contract"
 )
 
-const GanacheEndpoint = "http://127.0.0.1:8545"
-const MainPrivateKey = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
+const ganacheEndpoint = "http://127.0.0.1:8545"
+const mainPrivateKey = "a1d63a5f23ac9b62199e84d87fff196c603b61f6c42bddd0bcca9839d7449ba7"
 
 func toBigEndian(littleEndian []byte) []byte {
 	bigEndian := make([]byte, len(littleEndian))
@@ -38,43 +37,23 @@ func main() {
 	flag.Parse()
 
 	fmt.Printf("Please ensure Ganache has been started with this command:\n")
-	fmt.Printf("  ganache-cli --account \"0x%s,100000000000000000000\"\n", MainPrivateKey)
+	fmt.Printf("  ganache-cli --account \"0x%s,100000000000000000000\"\n", mainPrivateKey)
 
 	// Connect to local Ethereum testnet and prepare smart contract deployment
-	client, err := ethclient.Dial(GanacheEndpoint)
+	client, err := ethclient.Dial(ganacheEndpoint)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer client.Close()
 
-	privateKey, err := crypto.HexToECDSA(MainPrivateKey)
+	privateKey, err := crypto.HexToECDSA(mainPrivateKey)
 	if err != nil {
 		log.Fatal(err)
-	}
-
-	publicKey := privateKey.Public()
-	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
-	if !ok {
-		log.Fatal("error casting public key to ECDSA")
-	}
-
-	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
-	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	gasPrice, err := client.SuggestGasPrice(context.Background())
-	if err != nil {
-		log.Fatal(nil)
 	}
 
 	// Deploy smart contract
 	auth := bind.NewKeyedTransactor(privateKey)
-	auth.Nonce = big.NewInt(int64(nonce))
-	auth.Value = big.NewInt(0)
 	auth.GasLimit = uint64(6700000)
-	auth.GasPrice = gasPrice
 
 	address, _, instance, err := solidityEd25519.DeployEd25519(auth, client)
 	if err != nil {
@@ -88,12 +67,10 @@ func main() {
 			log.Fatal(err)
 		}
 
-		adaptorBigInt := new(big.Int)
-		adaptorBigInt.SetBytes(toBigEndian(adaptor[:]))
-		adaptorPointBigInt := new(big.Int)
+		adaptorBigInt := new(big.Int).SetBytes(toBigEndian(adaptor[:]))
 		adaptorPointBytes := toBigEndian(adaptorPoint[:])
 		adaptorPointBytes[0] &= 127 // clear sign bit
-		adaptorPointBigInt.SetBytes(adaptorPointBytes)
+		adaptorPointBigInt := new(big.Int).SetBytes(adaptorPointBytes)
 
 		_, adaptorPointSolidity, err := instance.Scalarmult(nil, adaptorBigInt)
 		if err != nil {
