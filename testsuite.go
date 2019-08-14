@@ -18,7 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 
-	solidityEd25519 "./contract"
+	solidityEd25519 "github.com/javgh/ed25519-solidity/contract"
 )
 
 const ganacheEndpoint = "http://127.0.0.1:8545"
@@ -72,13 +72,13 @@ func main() {
 		adaptorPointBytes[0] &= 127 // clear sign bit
 		adaptorPointBigInt := new(big.Int).SetBytes(adaptorPointBytes)
 
-		_, adaptorPointSolidity, err := instance.Scalarmult(nil, adaptorBigInt)
+		_, adaptorPointSolidity, err := instance.ScalarMultBase(nil, adaptorBigInt)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		var estimateData []byte
-		estimateData = append(estimateData, hexutil.MustDecode("0xe49cf911")...) // scalarmult
+		estimateData = append(estimateData, hexutil.MustDecode("0xc4f4912b")...) // scalarMultBase
 		estimateData = append(estimateData, common.LeftPadBytes(adaptorBigInt.Bytes(), 32)...)
 
 		gasEstimate, err := client.EstimateGas(context.Background(), ethereum.CallMsg{

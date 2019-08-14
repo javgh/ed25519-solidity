@@ -1,4 +1,4 @@
-pragma solidity ^0.5.3;
+pragma solidity ^0.5.10;
 
 // Using formulas from https://hyperelliptic.org/EFD/g1p/auto-twisted-projective.html
 // and constants from https://tools.ietf.org/html/draft-josefsson-eddsa-ed25519-03
@@ -84,7 +84,7 @@ contract Ed25519 {
         p2.z = mulmod(tmp.f, tmp.g, q);
     }
 
-    function scalarmult(uint s) public view returns (uint, uint) {
+    function scalarMultBase(uint s) public view returns (uint, uint) {
         Point memory b;
         Point memory result;
         b.x = Bx;
